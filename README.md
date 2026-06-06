@@ -24,16 +24,33 @@ chmod 400 aws-brasil-kp.pem
 
 The key pair **name** in AWS must match `key_name` in `variables.tf`. The **file** name is what you pass to `ssh -i`.
 
-### 2. Tailscale OAuth client
+### 2. Tailscale ACL
 
-Terraform manages the Tailscale auth key, ACL, and exit node approval — no manual key generation needed. You only need to create an OAuth client once:
+The policy is defined in `acl.json` and **replaces your entire tailnet ACL on apply**. If you have existing rules:
+
+1. Export your current policy from the [Tailscale admin console](https://login.tailscale.com/admin/acls/file) (top-right → **Download**).
+2. Merge its contents into `acl.json`.
+3. Make sure the following are present — they are required for the exit node to work:
+
+```json
+"tagOwners": {
+  "tag:exit-node": []
+},
+"autoApprovers": {
+  "exitNode": ["tag:exit-node"]
+}
+```
+
+### 3. Tailscale OAuth client
+
+Create an OAuth client once:
 
 1. Open [Tailscale → Settings → OAuth clients](https://login.tailscale.com/admin/settings/oauth).
 2. Click **Generate OAuth client**.
 3. Grant the **Devices** (`write`) and **ACL** (`write`) scopes.
 4. Copy the client ID and secret.
 
-### 3. Variables
+### 4. Variables
 
 Create `terraform.tfvars`:
 
@@ -42,7 +59,7 @@ tailscale_oauth_client_id     = "k..."
 tailscale_oauth_client_secret = "tskey-client-..."
 ```
 
-### 4. Deploy
+### 5. Deploy
 
 ```bash
 terraform init
@@ -51,7 +68,7 @@ terraform apply
 
 Confirm the plan, then type `yes`. Note the `public_ip` output when apply finishes.
 
-## SSH
+## SSH into the instance
 
 ```bash
 ssh -i aws-brasil-kp.pem ubuntu@$(terraform output -raw public_ip)
@@ -63,8 +80,9 @@ Use your actual `.pem` path if the key file is not in the project directory.
 
 - VPC, public subnet, internet gateway, and routes in `sa-east-1`
 - Ubuntu 24.04 EC2 instance with SSH (22) and Tailscale UDP (41641) allowed
-- Tailscale auth key (ephemeral, pre-authorized, tagged `tag:exit-node`) generated at apply time
-- Tailscale ACL updated: `autogroup:member` can reach all destinations; `tag:exit-node` cannot initiate connections into the tailnet
-- Exit node route auto-approved via ACL `autoApprovers` — no manual approval step in the admin console
+- Tailscale auth key (pre-authorized, tagged `tag:exit-node`) generated at apply time
+- Tailscale ACL replaced with the contents of `acl.json` (includes `tag:exit-node` owners and `autoApprovers`)
+- Exit node route auto-approved — no manual approval step in the admin console
+- Node key expiry disabled
 
 After deploy, the instance should appear in the [Tailscale admin console](https://login.tailscale.com/admin/machines) as `brasil` with exit node active.

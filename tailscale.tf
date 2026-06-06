@@ -30,19 +30,5 @@ resource "tailscale_device_key" "main" {
 
 resource "tailscale_acl" "main" {
   overwrite_existing_content = true
-  acl = jsonencode({
-    acls = [
-      {
-        action = "accept"
-        src    = ["autogroup:member"]
-        dst    = ["*:*"]
-      }
-    ]
-    tagOwners = {
-      "tag:exit-node" = []
-    }
-    autoApprovers = {
-      exitNode = ["tag:exit-node"]
-    }
-  })
+  acl                        = file("${path.module}/acl.json")
 }
