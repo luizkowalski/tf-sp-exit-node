@@ -10,8 +10,14 @@ variable "key_name" {
   default     = "aws-brasil-kp"
 }
 
-variable "tailscale_auth_key" {
-  description = "Tailscale auth key (ephemeral or reusable)"
+variable "tailscale_oauth_client_id" {
+  description = "Tailscale OAuth client ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "tailscale_oauth_client_secret" {
+  description = "Tailscale OAuth client secret"
   type        = string
   sensitive   = true
 }

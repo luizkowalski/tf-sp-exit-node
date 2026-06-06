@@ -4,6 +4,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.100"
     }
+    tailscale = {
+      source  = "tailscale/tailscale"
+      version = "~> 0.29"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.14"
+    }
   }
 }
 
@@ -87,7 +95,7 @@ resource "aws_instance" "server" {
   key_name               = var.key_name
 
   user_data = templatefile("${path.module}/tailscale.sh.tpl", {
-    tailscale_auth_key = var.tailscale_auth_key
+    tailscale_auth_key = tailscale_tailnet_key.main.key
   })
 
   tags = {

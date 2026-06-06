@@ -7,4 +7,5 @@ sysctl -p /etc/sysctl.d/99-tailscale.conf
 
 curl -fsSL https://tailscale.com/install.sh | sh
 
+# shellcheck disable=SC2154
 sudo tailscale up --authkey="${tailscale_auth_key}" --advertise-exit-node --hostname=brasil
