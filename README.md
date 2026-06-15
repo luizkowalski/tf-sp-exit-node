@@ -47,6 +47,7 @@ Create `terraform.tfvars`:
 ```hcl
 tailscale_oauth_client_id     = "k..."
 tailscale_oauth_client_secret = "tskey-client-..."
+region                        = "sa-east-1" # Default is already set to "sa-east-1"
 ```
 
 ### 4. Deploy

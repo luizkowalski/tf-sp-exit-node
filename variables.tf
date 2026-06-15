@@ -15,3 +15,9 @@ variable "tailscale_oauth_client_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "sa-east-1"
+}
