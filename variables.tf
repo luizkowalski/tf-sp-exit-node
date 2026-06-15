@@ -4,12 +4,6 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
-variable "key_name" {
-  description = "EC2 key pair name for SSH access"
-  type        = string
-  default     = "aws-brasil-kp"
-}
-
 variable "tailscale_oauth_client_id" {
   description = "Tailscale OAuth client ID"
   type        = string

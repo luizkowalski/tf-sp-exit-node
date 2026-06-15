@@ -1,5 +1,5 @@
 output "public_ip" {
-  value = aws_instance.server.public_ip
+  value = aws_eip.server.public_ip
 }
 
 output "public_dns" {

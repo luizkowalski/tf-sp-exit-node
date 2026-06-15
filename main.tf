@@ -17,17 +17,26 @@ terraform {
 
 provider "aws" {
   region = "sa-east-1"
+
+  default_tags {
+    tags = {
+      Project   = "tailscale-sp"
+      ManagedBy = "terraform"
+      Role      = "tailscale-exit-node"
+    }
+  }
 }
 
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
   enable_dns_hostnames = true
 }
 
 resource "aws_subnet" "main" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 }
 
 resource "aws_internet_gateway" "main" {
@@ -54,29 +63,29 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"]
   }
 }
 
 resource "aws_security_group" "server" {
   name        = "tailscale-server"
-  description = "Allow SSH and Tailscale"
+  description = "Tailscale exit node"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Tailscale UDP"
+    description = "Tailscale UDP IPv4"
     from_port   = 41641
     to_port     = 41641
     protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description      = "Tailscale UDP IPv6"
+    from_port        = 41641
+    to_port          = 41641
+    protocol         = "udp"
+    ipv6_cidr_blocks = ["::/0"]
   }
 
   egress {
@@ -85,6 +94,13 @@ resource "aws_security_group" "server" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    ipv6_cidr_blocks = ["::/0"]
+  }
 }
 
 resource "aws_instance" "server" {
@@ -92,13 +108,32 @@ resource "aws_instance" "server" {
   instance_type          = var.instance_type
   vpc_security_group_ids = [aws_security_group.server.id]
   subnet_id              = aws_subnet.main.id
-  key_name               = var.key_name
+  source_dest_check      = false
 
-  user_data = templatefile("${path.module}/tailscale.sh.tpl", {
+  root_block_device {
+    volume_size = 10
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
+  user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
     tailscale_auth_key = tailscale_tailnet_key.main.key
   })
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
 
   tags = {
     Name = "tailscale-server-sp"
   }
+}
+
+resource "aws_eip" "server" {
+  domain = "vpc"
+}
+
+resource "aws_eip_association" "server" {
+  instance_id   = aws_instance.server.id
+  allocation_id = aws_eip.server.id
 }

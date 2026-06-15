@@ -7,7 +7,7 @@ resource "tailscale_tailnet_key" "main" {
   depends_on    = [tailscale_acl.main]
   description   = "brasil exit node"
   reusable      = false
-  ephemeral     = false
+  ephemeral     = true
   preauthorized = true
   expiry        = 3600
   tags          = ["tag:exit-node"]
