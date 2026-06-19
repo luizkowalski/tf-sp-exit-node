@@ -20,9 +20,9 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = "tailscale-sp"
       ManagedBy = "terraform"
-      Role      = "tailscale-exit-node"
+      Project   = "personal-vpn"
+      Role      = "exit-node"
     }
   }
 }
@@ -125,7 +125,7 @@ resource "aws_instance" "server" {
   }
 
   tags = {
-    Name = "tailscale-server-sp"
+    Name = "tailscale-server"
   }
 }
 
