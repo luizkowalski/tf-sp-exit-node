@@ -1,7 +1,6 @@
 #cloud-config
 
 package_update: true
-package_upgrade: true
 
 users:
   - default
@@ -28,7 +27,9 @@ write_files:
 
 runcmd:
   - sysctl --system
+  - iptables -I INPUT -p udp --dport 41641 -j ACCEPT
+  - ip6tables -I INPUT -p udp --dport 41641 -j ACCEPT
   - curl -fsSL https://tailscale.com/install.sh | sh
   - systemctl enable --now tailscaled
   - sleep 5
-  - tailscale up --authkey=${tailscale_auth_key} --advertise-exit-node --ssh --hostname=brasil
+  - tailscale up --authkey=${tailscale_auth_key} --advertise-exit-node --ssh --hostname=${hostname}

@@ -1,8 +1,8 @@
 terraform {
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.100"
+    oci = {
+      source  = "oracle/oci"
+      version = "~> 6.0"
     }
     tailscale = {
       source  = "tailscale/tailscale"
@@ -15,125 +15,118 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = var.region
+provider "oci" {
+  tenancy_ocid     = var.tenancy_ocid
+  user_ocid        = var.user_ocid
+  fingerprint      = var.fingerprint
+  private_key_path = var.private_key_path
+  region           = var.region
+}
 
-  default_tags {
-    tags = {
-      ManagedBy = "terraform"
-      Project   = "personal-vpn"
-      Role      = "exit-node"
+resource "oci_core_vcn" "main" {
+  compartment_id = var.compartment_id
+  cidr_blocks    = ["10.0.0.0/16"]
+  display_name   = "tailscale-vcn"
+  dns_label      = "tailscale"
+}
+
+resource "oci_core_internet_gateway" "main" {
+  compartment_id = var.compartment_id
+  vcn_id         = oci_core_vcn.main.id
+  display_name   = "tailscale-igw"
+  enabled        = true
+}
+
+resource "oci_core_route_table" "main" {
+  compartment_id = var.compartment_id
+  vcn_id         = oci_core_vcn.main.id
+  display_name   = "tailscale-rt"
+
+  route_rules {
+    destination       = "0.0.0.0/0"
+    network_entity_id = oci_core_internet_gateway.main.id
+  }
+}
+
+resource "oci_core_security_list" "main" {
+  compartment_id = var.compartment_id
+  vcn_id         = oci_core_vcn.main.id
+  display_name   = "tailscale-sl"
+
+  ingress_security_rules {
+    description = "Tailscale UDP"
+    protocol    = "17"
+    source      = "0.0.0.0/0"
+    source_type = "CIDR_BLOCK"
+    stateless   = false
+
+    udp_options {
+      min = 41641
+      max = 41641
     }
   }
-}
 
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-}
-
-resource "aws_subnet" "main" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
-  map_public_ip_on_launch = false
-}
-
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-}
-
-resource "aws_route_table" "main" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+  egress_security_rules {
+    description      = "All egress"
+    protocol         = "all"
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    stateless        = false
   }
 }
 
-resource "aws_route_table_association" "main" {
-  subnet_id      = aws_subnet.main.id
-  route_table_id = aws_route_table.main.id
+resource "oci_core_subnet" "main" {
+  compartment_id             = var.compartment_id
+  vcn_id                     = oci_core_vcn.main.id
+  cidr_block                 = "10.0.1.0/24"
+  display_name               = "tailscale-subnet"
+  dns_label                  = "tailscale"
+  route_table_id             = oci_core_route_table.main.id
+  security_list_ids          = [oci_core_security_list.main.id]
+  prohibit_public_ip_on_vnic = false
 }
 
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
-
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"]
-  }
+data "oci_core_images" "ubuntu" {
+  compartment_id           = var.compartment_id
+  operating_system         = "Canonical Ubuntu"
+  operating_system_version = "24.04"
+  shape                    = "VM.Standard.E2.1.Micro"
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
 }
 
-resource "aws_security_group" "server" {
-  name        = "tailscale-server"
-  description = "Tailscale exit node"
-  vpc_id      = aws_vpc.main.id
+resource "oci_core_instance" "server" {
+  compartment_id      = var.compartment_id
+  availability_domain = var.availability_domain
+  display_name        = "tailscale-server"
+  shape               = "VM.Standard.E2.1.Micro"
 
-  ingress {
-    description = "Tailscale UDP IPv4"
-    from_port   = 41641
-    to_port     = 41641
-    protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
+  source_details {
+    source_type             = "image"
+    source_id               = data.oci_core_images.ubuntu.images[0].id
+    boot_volume_size_in_gbs = 50
   }
 
-  ingress {
-    description      = "Tailscale UDP IPv6"
-    from_port        = 41641
-    to_port          = 41641
-    protocol         = "udp"
-    ipv6_cidr_blocks = ["::/0"]
+  create_vnic_details {
+    subnet_id              = oci_core_subnet.main.id
+    assign_public_ip       = true
+    skip_source_dest_check = true
+    display_name           = "tailscale-vnic"
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    ipv6_cidr_blocks = ["::/0"]
+  metadata = {
+    user_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tpl", {
+      tailscale_auth_key = tailscale_tailnet_key.main.key
+      hostname           = var.hostname
+    }))
   }
 }
 
-resource "aws_instance" "server" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  vpc_security_group_ids = [aws_security_group.server.id]
-  subnet_id              = aws_subnet.main.id
-  source_dest_check      = false
-
-  root_block_device {
-    volume_size = 10
-    volume_type = "gp3"
-    encrypted   = true
-  }
-
-  user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
-    tailscale_auth_key = tailscale_tailnet_key.main.key
-  })
-
-  lifecycle {
-    ignore_changes = [ami]
-  }
-
-  tags = {
-    Name = "tailscale-server"
-  }
+data "oci_core_vnic_attachments" "server" {
+  compartment_id = var.compartment_id
+  instance_id    = oci_core_instance.server.id
 }
 
-resource "aws_eip" "server" {
-  domain = "vpc"
-}
-
-resource "aws_eip_association" "server" {
-  instance_id   = aws_instance.server.id
-  allocation_id = aws_eip.server.id
+data "oci_core_vnic" "server" {
+  vnic_id = data.oci_core_vnic_attachments.server.vnic_attachments[0].vnic_id
 }

@@ -5,8 +5,8 @@ provider "tailscale" {
 
 resource "tailscale_tailnet_key" "main" {
   depends_on    = [tailscale_acl.main]
-  description   = "brasil exit node"
-  reusable      = false
+  description   = "${var.hostname} exit node"
+  reusable      = true
   ephemeral     = true
   preauthorized = true
   expiry        = 3600
@@ -14,13 +14,16 @@ resource "tailscale_tailnet_key" "main" {
 }
 
 resource "time_sleep" "wait_for_device" {
-  depends_on      = [aws_instance.server]
-  create_duration = "60s"
+  create_duration = "180s"
+
+  triggers = {
+    instance_id = oci_core_instance.server.id
+  }
 }
 
 data "tailscale_device" "main" {
   depends_on = [time_sleep.wait_for_device]
-  hostname   = "brasil"
+  hostname   = var.hostname
 }
 
 resource "tailscale_device_key" "main" {
