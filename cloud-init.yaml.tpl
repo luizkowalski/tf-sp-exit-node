@@ -11,9 +11,19 @@ users:
 
 packages:
   - curl
+  - ethtool
   - iptables
+  - networkd-dispatcher
 
 write_files:
+  - path: /etc/networkd-dispatcher/routable.d/50-tailscale
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
+      ethtool -K "$NETDEV" rx-udp-gro-forwarding on rx-gro-list off
+
   - path: /etc/sysctl.d/99-tailscale.conf
     owner: root:root
     permissions: "0644"
@@ -27,6 +37,7 @@ write_files:
 
 runcmd:
   - sysctl --system
+  - /etc/networkd-dispatcher/routable.d/50-tailscale
   - iptables -I INPUT -p udp --dport 41641 -j ACCEPT
   - ip6tables -I INPUT -p udp --dport 41641 -j ACCEPT
   - curl -fsSL https://tailscale.com/install.sh | sh
